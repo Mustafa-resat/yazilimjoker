@@ -28,16 +28,17 @@ export async function POST(req: Request){
   }
   const text=[`Yeni JOKER YAZILIM teklif talebi`,`Ad/Firma: ${clean.name}`,`E-posta: ${clean.email}`,`Telefon: ${clean.phone || '-'}`,`Proje türü: ${clean.type || '-'}`,`Mesaj: ${clean.message}`].join('\n');
   const r=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.RESEND_FROM || 'JOKER YAZILIM <onboarding@resend.dev>',to:[process.env.QUOTE_TO || 'mustafaresat69@gmail.com'],reply_to:clean.email,subject:`Yeni Teklif: ${clean.type || 'Yazılım Projesi'} — ${clean.name}`,text})});
-  const resendRaw=await r.text();
-  let resendResult: {id?: string; message?: string; name?: string} = {};
-  try { resendResult=resendRaw ? JSON.parse(resendRaw) : {}; } catch {}
-  if(!r.ok && !resendResult.id){
-    console.error('[quote] Resend API error', {status:r.status, body:resendRaw.slice(0,1000)});
-    return NextResponse.json({ok:false,error:'E-posta gönderilemedi. Kayıt veritabanına alınmış olabilir; lütfen WhatsApp üzerinden de ulaşın.'},{status:502});
+  if(!r.ok){
+    let providerError='';
+    try { providerError=await r.text(); } catch {}
+    console.error('[quote] Resend primary email failed', r.status, providerError);
+    return NextResponse.json({ok:false,error:'E-posta gönderilemedi. Lütfen tekrar deneyin veya WhatsApp üzerinden ulaşın.'},{status:502});
   }
+  // Ana teklif maili kabul edildi. Müşteriye otomatik yanıt varsa bunu arka planda gönder;
+  // müşteri yanıtının sonucu ana teklif formunun başarı durumunu etkilemesin.
   if (process.env.SEND_CUSTOMER_REPLY === 'true') {
-    await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.RESEND_FROM || 'JOKER YAZILIM <onboarding@resend.dev>',to:[clean.email],subject:'JOKER YAZILIM — Talebinizi aldık',text:`Merhaba ${clean.name},\n\nProje talebinizi aldık. En kısa sürede sizinle iletişime geçeceğiz.\n\nJOKER YAZILIM\n0539 682 81 77\nmustafaresat69@gmail.com`})}).catch(()=>null);
+    void fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.RESEND_FROM || 'JOKER YAZILIM <onboarding@resend.dev>',to:[clean.email],subject:'JOKER YAZILIM — Talebinizi aldık',text:`Merhaba ${clean.name},\n\nProje talebinizi aldık. En kısa sürede sizinle iletişime geçeceğiz.\n\nJOKER YAZILIM\n0539 682 81 77\nmustafaresat69@gmail.com`})}).then(replyResponse=>{ if(!replyResponse.ok) console.error('[quote] Resend customer reply failed', replyResponse.status); }).catch(error=>console.error('[quote] Resend customer reply error', error));
   }
-  return NextResponse.json({ok:true});
+  return NextResponse.json({ok:true,message:'Teklif başarıyla gönderildi.'},{status:200});
  }catch{return NextResponse.json({ok:false,error:'Beklenmeyen bir hata oluştu.'},{status:500});}
 }
